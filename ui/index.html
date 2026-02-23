@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puertos Guard</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Puertos en Uso</h1>
+            <button id="kill-all" class="kill-all-btn">KILL ALL</button>
+        </div>
+        
+        <div id="port-list" class="port-list">
+            <!-- Port items will be injected here -->
+            <div class="empty-state">
+                <span>Escaneando puertos...</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            Sistema de Seguridad de Puertos
+        </div>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+</html>

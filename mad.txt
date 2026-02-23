@@ -1,0 +1,8 @@
+# 1. Instalar dependencias corregidas (WebKit 4.1 para sistemas modernos)
+sudo apt update && sudo apt install -y cargo rustc libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libjavascriptcoregtk-4.1-dev libsoup-3.0-dev build-essential curl wget libssl-dev
+
+# 2. Instalar el CLI de Tauri (si no está instalado)
+cargo install tauri-cli
+
+# 3. Construir el instalador .deb
+cargo tauri build
