@@ -1,22 +1,26 @@
 [package]
-name = "puertos-guard"
-version = "0.1.0"
-description = "Manage active ports and kill processes"
-authors = ["Antigravity"]
+name = "portslayer"
+version = "1.0.0"
 edition = "2021"
-
-[build-dependencies]
-tauri-build = { version = "1.5" }
+authors = ["Luis"]
+description = "⚔️ PortSlayer - System tray app to monitor and kill open ports on Linux"
+license = "MIT"
+repository = "https://github.com/artur282/portslayer"
+keywords = ["ports", "network", "system-tray", "linux", "monitoring"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
-tauri = { version = "1.5", features = ["api-all", "system-tray"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-procfs = "0.16"
-sysinfo = "0.30"
-libc = "0.2"
+# System tray para Linux (StatusNotifierItem / AppIndicator)
+ksni = "0.2"
 
-[features]
-# by default Tauri runs in production mode
-# however, for development we want to keep the devtools enabled
-custom-protocol = ["tauri/custom-protocol"]
+# Logging estructurado
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+# Optimizaciones para binario más pequeño y rápido
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

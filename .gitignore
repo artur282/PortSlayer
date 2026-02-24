@@ -1,0 +1,18 @@
+# Archivos de compilación de Rust
+/target/
+debug/
+*.pdb
+
+# Archivos del IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de log
+*.log
