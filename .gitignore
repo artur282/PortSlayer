@@ -10,6 +10,11 @@ debug/
 *.swo
 *~
 
+# Archivos de skills
+.agents/
+.skills/
+skills-lock.json
+
 # Archivos del sistema
 .DS_Store
 Thumbs.db
