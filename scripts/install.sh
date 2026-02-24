@@ -27,14 +27,31 @@ echo "  ⚔️  PortSlayer - Instalador"
 echo "  ================================"
 echo -e "${NC}"
 
+# ─── Cargar entorno de rustup si existe ─────────────────
+# Esto garantiza que usamos la versión de Rust instalada via rustup
+# y no la versión del sistema (que puede ser antigua y tener limitaciones)
+if [ -f "$HOME/.cargo/env" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.cargo/env"
+fi
+
 # ─── Verificar dependencias ────────────────────────────
 echo -e "${BLUE}[1/5]${NC} Verificando dependencias..."
 
-# Verificar que Rust/Cargo estén instalados
-if ! command -v cargo &> /dev/null; then
-    echo -e "${YELLOW}⚠ Cargo no encontrado. Instalando Rust...${NC}"
+# Determinar qué cargo usar: rustup tiene prioridad sobre el del sistema
+# El cargo del sistema puede no soportar el formato del Cargo.lock
+CARGO_BIN="cargo"
+if command -v "$HOME/.cargo/bin/cargo" &> /dev/null; then
+    CARGO_BIN="$HOME/.cargo/bin/cargo"
+    echo -e "  → Usando cargo de rustup: $($CARGO_BIN --version)"
+elif command -v cargo &> /dev/null; then
+    echo -e "  → Usando cargo del sistema: $(cargo --version)"
+else
+    # Instalar Rust/Cargo vía rustup si no hay ninguno disponible
+    echo -e "${YELLOW}⚠ Cargo no encontrado. Instalando Rust vía rustup...${NC}"
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     source "$HOME/.cargo/env"
+    CARGO_BIN="$HOME/.cargo/bin/cargo"
 fi
 
 # Verificar dependencia del sistema: libdbus (requerida por ksni)
@@ -51,9 +68,21 @@ fi
 
 echo -e "${GREEN}✓ Dependencias verificadas${NC}"
 
+# ─── Regenerar Cargo.lock si es incompatible ───────────
+# El Cargo.lock versión 4 requiere cargo >= 1.78.
+# Si el sistema tiene una versión anterior se elimina para regenerarlo.
+if [ -f "Cargo.lock" ]; then
+    LOCK_VERSION=$(grep "^version" Cargo.lock | head -1 | awk '{print $3}')
+    CARGO_MINOR=$("$CARGO_BIN" --version | grep -oP '\d+\.\d+' | head -1 | cut -d. -f2)
+    if [ -n "$LOCK_VERSION" ] && [ "$LOCK_VERSION" -ge 4 ] && [ "$CARGO_MINOR" -lt 78 ]; then
+        echo -e "${YELLOW}→ Cargo.lock v${LOCK_VERSION} incompatible con cargo $(${CARGO_BIN} --version | awk '{print $2}'). Regenerando...${NC}"
+        rm -f Cargo.lock
+    fi
+fi
+
 # ─── Compilar en modo release ──────────────────────────
 echo -e "${BLUE}[2/5]${NC} Compilando PortSlayer (modo release)..."
-cargo build --release
+"$CARGO_BIN" build --release
 
 if [ ! -f "target/release/$BINARY_NAME" ]; then
     echo -e "${RED}✗ Error: No se encontró el binario compilado${NC}"
