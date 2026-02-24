@@ -17,6 +17,9 @@ ksni = "0.2"
 log = "0.4"
 env_logger = "0.11"
 
+# Syscalls POSIX: setsid() para desengancharse de la terminal al iniciar
+nix = { version = "0.29", default-features = false, features = ["process"] }
+
 [profile.release]
 # Optimizaciones para binario más pequeño y rápido
 opt-level = "z"

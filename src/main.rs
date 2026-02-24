@@ -17,11 +17,28 @@
 mod port_scanner;
 mod tray;
 
+/// Desvincula el proceso de la terminal que lo inició.
+///
+/// Llama a `setsid()` para crear una nueva sesión de proceso sin
+/// terminal de control. Esto evita que el proceso reciba la señal
+/// SIGHUP cuando la terminal padre se cierra, permitiendo que
+/// `portslayer &` funcione igual que `nohup portslayer &`.
+///
+/// Solo es efectivo cuando el proceso NO es ya líder de sesión
+/// (es decir, cuando se lanzó como hijo de una shell).
+fn daemonize() {
+    // setsid() falla si el proceso ya es líder de sesión; se ignora el error
+    // porque en ese caso ya está correctamente desenganchado
+    if let Err(err) = nix::unistd::setsid() {
+        log::debug!("setsid() no aplicable en este contexto: {err}");
+    }
+}
+
 /// Punto de entrada principal de PortSlayer.
 ///
-/// Inicializa el sistema de logging y lanza el system tray.
-/// La aplicación se ejecuta indefinidamente hasta que el usuario
-/// seleccione "Salir" del menú contextual.
+/// Inicializa el sistema de logging, se desvincula de la terminal
+/// y lanza el system tray. La aplicación se ejecuta indefinidamente
+/// hasta que el usuario seleccione "Salir" del menú contextual.
 fn main() {
     // Inicializar logging (nivel INFO por defecto, configurable con RUST_LOG)
     env_logger::Builder::from_env(
@@ -32,6 +49,10 @@ fn main() {
 
     log::info!("⚔️  PortSlayer v{} iniciando...", env!("CARGO_PKG_VERSION"));
     log::info!("Sistema de monitoreo de puertos para Linux");
+
+    // Desengancharse de la terminal para sobrevivir al cierre de la sesión.
+    // Esto permite ejecutar `portslayer &` sin necesitar `nohup`.
+    daemonize();
 
     // Lanzar el system tray (bloquea el hilo principal)
     tray::run_tray();
