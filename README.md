@@ -85,8 +85,8 @@ Y luego tienes que abrir la terminal, buscar el PID, ejecutar `kill`... **demasi
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/artur282/portslayer.git
-cd portslayer
+git clone https://github.com/artur282/PortSlayer.git
+cd PortSlayer
 
 # Instalar (compila, instala y configura autostart)
 chmod +x scripts/install.sh
