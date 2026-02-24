@@ -56,13 +56,15 @@ impl std::fmt::Display for PortInfo {
             write!(
                 f,
                 "{} {} ({}) → {} [PID {}]",
-                proto_upper, self.port, self.local_address, self.process_name, self.pid
+                proto_upper, self.port, self.local_address,
+                self.process_name, self.pid
             )
         } else {
             write!(
                 f,
                 "{} {} ({}) → {}",
-                proto_upper, self.port, self.local_address, self.process_name
+                proto_upper, self.port, self.local_address,
+                self.process_name
             )
         }
     }
@@ -159,7 +161,7 @@ pub fn total_pages(total_items: usize, page_size: usize) -> usize {
     if total_items == 0 || page_size == 0 {
         return 1;
     }
-    total_items.div_ceil(page_size)
+    (total_items + page_size - 1) / page_size
 }
 
 /// Obtiene una página de puertos para mostrar en el menú.
@@ -199,14 +201,23 @@ pub fn get_page(ports: &[PortInfo], page: usize, page_size: usize) -> Vec<PortIn
 /// `Some(String)` con la salida del comando, o `None` si falla.
 fn execute_ss_command(flags: &str) -> Option<String> {
     // Intentar primero con sudo para ver PIDs de todos los procesos
-    let result = Command::new("sudo").args(["-n", "ss", flags]).output();
+    let result = Command::new("sudo")
+        .args(["-n", "ss", flags])
+        .output();
 
     match result {
-        Ok(output) if output.status.success() => String::from_utf8(output.stdout).ok(),
+        Ok(output) if output.status.success() => {
+            String::from_utf8(output.stdout).ok()
+        }
         _ => {
             // Fallback sin sudo (solo verá procesos propios)
-            log::warn!("Ejecutando ss sin sudo - algunos PIDs no serán visibles");
-            let fallback = Command::new("ss").arg(flags).output().ok()?;
+            log::warn!(
+                "Ejecutando ss sin sudo - algunos PIDs no serán visibles"
+            );
+            let fallback = Command::new("ss")
+                .arg(flags)
+                .output()
+                .ok()?;
 
             String::from_utf8(fallback.stdout).ok()
         }
@@ -261,7 +272,8 @@ fn parse_single_ss_line(line: &str, protocol: &str) -> Option<PortInfo> {
     let (local_address, port) = extract_address_and_port(line)?;
 
     // Extraer PID y nombre del proceso (OPCIONAL - puede no existir)
-    let (pid, process_name) = extract_process_info(line).unwrap_or((0, "desconocido".to_string()));
+    let (pid, process_name) = extract_process_info(line)
+        .unwrap_or((0, "desconocido".to_string()));
 
     Some(PortInfo {
         protocol: protocol.to_string(),
@@ -334,7 +346,9 @@ fn extract_address_and_port(line: &str) -> Option<(String, u16)> {
 /// # Returns
 /// String con la dirección limpia para mostrar al usuario.
 fn clean_address(addr: &str) -> String {
-    let cleaned = addr.trim_start_matches('[').trim_end_matches(']');
+    let cleaned = addr
+        .trim_start_matches('[')
+        .trim_end_matches(']');
 
     // Remover sufijo de interfaz (ej: "127.0.0.53%lo" → "127.0.0.53")
     if let Some(pos) = cleaned.find('%') {
@@ -408,7 +422,9 @@ fn scan_proc_net_ports() -> Vec<PortInfo> {
 
     for (path, protocol) in &proc_files {
         if let Ok(content) = fs::read_to_string(path) {
-            let parsed = parse_proc_net_file(&content, protocol, &inode_to_pid);
+            let parsed = parse_proc_net_file(
+                &content, protocol, &inode_to_pid,
+            );
             ports.extend(parsed);
         }
     }
@@ -444,7 +460,9 @@ fn parse_proc_net_file(
     content
         .lines()
         .skip(1) // Saltar el header
-        .filter_map(|line| parse_proc_net_line(line, protocol, inode_to_pid))
+        .filter_map(|line| {
+            parse_proc_net_line(line, protocol, inode_to_pid)
+        })
         .collect()
 }
 
@@ -662,7 +680,10 @@ fn extract_socket_inode(link: &str) -> Option<u64> {
 /// `Err(String)` con el mensaje de error en caso contrario.
 pub fn kill_process(pid: u32) -> Result<(), String> {
     if pid == 0 {
-        return Err("No se puede matar un proceso con PID desconocido (0)".to_string());
+        return Err(
+            "No se puede matar un proceso con PID desconocido (0)"
+                .to_string(),
+        );
     }
 
     log::info!("Intentando matar proceso con PID: {}", pid);
@@ -678,39 +699,27 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
         Ok(())
     } else {
         // Fallback con pkexec para permisos elevados (prompt gráfico)
-        log::warn!("Kill sin permisos falló, intentando con pkexec...");
+        log::warn!(
+            "Kill sin permisos falló, intentando con pkexec..."
+        );
         let elevated = Command::new("pkexec")
             .args(["kill", "-9", &pid.to_string()])
             .output()
             .map_err(|e| format!("Error ejecutando pkexec: {}", e))?;
 
         if elevated.status.success() {
-            log::info!("Proceso {} terminado con permisos elevados", pid);
+            log::info!(
+                "Proceso {} terminado con permisos elevados", pid
+            );
             Ok(())
         } else {
-            let stderr = String::from_utf8_lossy(&elevated.stderr);
-            Err(format!("No se pudo matar el proceso {}: {}", pid, stderr))
+            let stderr =
+                String::from_utf8_lossy(&elevated.stderr);
+            Err(format!(
+                "No se pudo matar el proceso {}: {}",
+                pid, stderr
+            ))
         }
-    }
-}
-
-/// Mata el proceso asociado a un puerto cuando no se conoce el PID, usando `fuser`.
-/// 
-/// Utiliza `pkexec` para solicitar permisos gráficos.
-pub fn kill_port_by_number(port: u16, protocol: &str) -> Result<(), String> {
-    log::info!("Intentando cerrar puerto {}/{} vía fuser", port, protocol);
-
-    let elevated = Command::new("pkexec")
-        .args(["fuser", "-k", "-9", "-n", protocol, &port.to_string()])
-        .output()
-        .map_err(|e| format!("Error ejecutando pkexec fuser: {}", e))?;
-
-    if elevated.status.success() {
-        log::info!("Puerto {}/{} cerrado con fuser", port, protocol);
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&elevated.stderr);
-        Err(format!("No se pudo cerrar el puerto {}/{}: {}", port, protocol, stderr))
     }
 }
 
@@ -730,12 +739,19 @@ pub fn kill_all_port_processes() -> Result<usize, String> {
     }
 
     // Recopilar PIDs únicos, excluyendo PID 0 (desconocidos)
-    let mut unique_pids: Vec<u32> = ports.iter().map(|p| p.pid).filter(|pid| *pid > 0).collect();
+    let mut unique_pids: Vec<u32> = ports
+        .iter()
+        .map(|p| p.pid)
+        .filter(|pid| *pid > 0)
+        .collect();
     unique_pids.sort();
     unique_pids.dedup();
 
     if unique_pids.is_empty() {
-        return Err("No hay procesos con PID conocido que cerrar".to_string());
+        return Err(
+            "No hay procesos con PID conocido que cerrar"
+                .to_string(),
+        );
     }
 
     let mut killed_count = 0;
@@ -837,7 +853,8 @@ mod tests {
     #[test]
     fn test_parse_hex_address_ipv4() {
         // 00000000:0BB8 = 0.0.0.0:3000
-        let (addr, port) = parse_hex_address("00000000:0BB8").unwrap();
+        let (addr, port) =
+            parse_hex_address("00000000:0BB8").unwrap();
         assert_eq!(port, 3000);
         assert_eq!(addr, "0.0.0.0");
     }
@@ -846,7 +863,8 @@ mod tests {
     #[test]
     fn test_parse_hex_address_loopback() {
         // 0100007F:1538 = 127.0.0.1:5432
-        let (addr, port) = parse_hex_address("0100007F:1538").unwrap();
+        let (addr, port) =
+            parse_hex_address("0100007F:1538").unwrap();
         assert_eq!(port, 5432);
         assert_eq!(addr, "127.0.0.1");
     }
@@ -854,7 +872,10 @@ mod tests {
     /// Verifica extracción de inode de socket
     #[test]
     fn test_extract_socket_inode() {
-        assert_eq!(extract_socket_inode("socket:[22881]"), Some(22881));
+        assert_eq!(
+            extract_socket_inode("socket:[22881]"),
+            Some(22881)
+        );
         assert_eq!(extract_socket_inode("pipe:[123]"), None);
         assert_eq!(extract_socket_inode("anon_inode:"), None);
     }
@@ -879,9 +900,18 @@ mod tests {
             },
         ];
 
-        assert_eq!(filter_ports(&ports, ProtocolFilter::Tcp).len(), 1);
-        assert_eq!(filter_ports(&ports, ProtocolFilter::Udp).len(), 1);
-        assert_eq!(filter_ports(&ports, ProtocolFilter::All).len(), 2);
+        assert_eq!(
+            filter_ports(&ports, ProtocolFilter::Tcp).len(),
+            1
+        );
+        assert_eq!(
+            filter_ports(&ports, ProtocolFilter::Udp).len(),
+            1
+        );
+        assert_eq!(
+            filter_ports(&ports, ProtocolFilter::All).len(),
+            2
+        );
     }
 
     /// Verifica la paginación
@@ -922,19 +952,5 @@ mod tests {
         assert_eq!(clean_address("127.0.0.53%lo"), "127.0.0.53");
         assert_eq!(clean_address("*"), "0.0.0.0");
         assert_eq!(clean_address("0.0.0.0"), "0.0.0.0");
-    }
-}
-#[test]
-fn test_debug_print() {
-    let ports = scan_open_ports();
-    for p in ports {
-        println!("{} {} {}", p.port, p.pid, p.process_name);
-    }
-}
-// Debug hack
-pub fn debug_ports() {
-    let ports = scan_open_ports();
-    for p in ports {
-        log::error!("DEBUG PORT: {} {} {}", p.port, p.pid, p.process_name);
     }
 }
