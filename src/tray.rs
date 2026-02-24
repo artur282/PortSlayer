@@ -44,10 +44,7 @@ impl PortSlayerTray {
     /// y configura la vista con filtro "Todos" y paginación de 10.
     pub fn new() -> Self {
         let ports = port_scanner::scan_open_ports();
-        log::info!(
-            "Escaneo inicial: {} puertos detectados",
-            ports.len()
-        );
+        log::info!("Escaneo inicial: {} puertos detectados", ports.len());
         Self {
             ports: Arc::new(Mutex::new(ports)),
             protocol_filter: ProtocolFilter::All,
@@ -60,9 +57,7 @@ impl PortSlayerTray {
     ///
     /// Se usa para compartir el estado con el hilo de actualización
     /// automática que refresca los puertos cada 10 segundos.
-    pub fn ports_handle(
-        &self,
-    ) -> Arc<Mutex<Vec<port_scanner::PortInfo>>> {
+    pub fn ports_handle(&self) -> Arc<Mutex<Vec<port_scanner::PortInfo>>> {
         Arc::clone(&self.ports)
     }
 
@@ -89,9 +84,7 @@ impl PortSlayerTray {
             Ok(ports) => ports.clone(),
             Err(_) => Vec::new(),
         };
-        port_scanner::filter_ports(
-            &current_ports, self.protocol_filter,
-        )
+        port_scanner::filter_ports(&current_ports, self.protocol_filter)
     }
 }
 
@@ -135,18 +128,16 @@ impl Tray for PortSlayerTray {
     /// ❌ Salir
     /// ```
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        let mut items: Vec<ksni::MenuItem<Self>> = Vec::new();
-
-        // ── Botón de actualizar ──
-        items.push(build_refresh_item());
-        items.push(ksni::MenuItem::Separator);
-
-        // ── Filtro de protocolo (submenu) ──
-        items.push(build_filter_submenu(self.protocol_filter));
-
-        // ── Tamaño de página (submenu) ──
-        items.push(build_page_size_submenu(self.page_size));
-        items.push(ksni::MenuItem::Separator);
+        let mut items: Vec<ksni::MenuItem<Self>> = vec![
+            // ── Botón de actualizar ──
+            build_refresh_item(),
+            ksni::MenuItem::Separator,
+            // ── Filtro de protocolo (submenu) ──
+            build_filter_submenu(self.protocol_filter),
+            // ── Tamaño de página (submenu) ──
+            build_page_size_submenu(self.page_size),
+            ksni::MenuItem::Separator,
+        ];
 
         // ── Obtener puertos filtrados y paginados ──
         let filtered_ports = self.get_filtered_ports();
@@ -154,12 +145,8 @@ impl Tray for PortSlayerTray {
         let pages = port_scanner::total_pages(total, self.page_size);
 
         // Asegurar que la página actual es válida
-        let safe_page = self.current_page.min(
-            if pages > 0 { pages - 1 } else { 0 },
-        );
-        let page_ports = port_scanner::get_page(
-            &filtered_ports, safe_page, self.page_size,
-        );
+        let safe_page = self.current_page.min(if pages > 0 { pages - 1 } else { 0 });
+        let page_ports = port_scanner::get_page(&filtered_ports, safe_page, self.page_size);
 
         if total == 0 {
             // Sin puertos abiertos
@@ -170,10 +157,7 @@ impl Tray for PortSlayerTray {
             items.push(ksni::MenuItem::Separator);
 
             // ── Encabezado con conteo ──
-            items.push(build_count_header(
-                total,
-                self.protocol_filter,
-            ));
+            items.push(build_count_header(total, self.protocol_filter));
 
             // ── Lista de puertos de la página actual ──
             for port_info in &page_ports {
@@ -184,9 +168,7 @@ impl Tray for PortSlayerTray {
         // ── Navegación de páginas ──
         if pages > 1 {
             items.push(ksni::MenuItem::Separator);
-            let nav_items = build_navigation_items(
-                safe_page, pages,
-            );
+            let nav_items = build_navigation_items(safe_page, pages);
             items.extend(nav_items);
         }
 
@@ -221,9 +203,7 @@ fn build_refresh_item() -> ksni::MenuItem<PortSlayerTray> {
 ///
 /// # Arguments
 /// * `current_filter` - Filtro actualmente activo
-fn build_filter_submenu(
-    current_filter: ProtocolFilter,
-) -> ksni::MenuItem<PortSlayerTray> {
+fn build_filter_submenu(current_filter: ProtocolFilter) -> ksni::MenuItem<PortSlayerTray> {
     // Construir las opciones del filtro con indicador visual
     let filters = [
         ProtocolFilter::All,
@@ -245,9 +225,7 @@ fn build_filter_submenu(
             StandardItem {
                 label,
                 activate: Box::new(move |tray: &mut PortSlayerTray| {
-                    log::info!(
-                        "Filtro cambiado a: {}", filter.label()
-                    );
+                    log::info!("Filtro cambiado a: {}", filter.label());
                     tray.protocol_filter = filter;
                     // Resetear a página 0 al cambiar filtro
                     tray.current_page = 0;
@@ -259,9 +237,7 @@ fn build_filter_submenu(
         .collect();
 
     SubMenu {
-        label: format!(
-            "📊 Filtro: {}", current_filter.label()
-        ),
+        label: format!("📊 Filtro: {}", current_filter.label()),
         submenu: submenu_items,
         ..Default::default()
     }
@@ -274,27 +250,19 @@ fn build_filter_submenu(
 ///
 /// # Arguments
 /// * `current_size` - Tamaño de página actual
-fn build_page_size_submenu(
-    current_size: usize,
-) -> ksni::MenuItem<PortSlayerTray> {
+fn build_page_size_submenu(current_size: usize) -> ksni::MenuItem<PortSlayerTray> {
     let sizes: Vec<usize> = vec![5, 10];
 
     let submenu_items: Vec<ksni::MenuItem<PortSlayerTray>> = sizes
         .iter()
         .map(|&size| {
-            let indicator = if size == current_size {
-                "●"
-            } else {
-                "○"
-            };
+            let indicator = if size == current_size { "●" } else { "○" };
             let label = format!("{} {} puertos", indicator, size);
 
             StandardItem {
                 label,
                 activate: Box::new(move |tray: &mut PortSlayerTray| {
-                    log::info!(
-                        "Tamaño de página cambiado a: {}", size
-                    );
+                    log::info!("Tamaño de página cambiado a: {}", size);
                     tray.page_size = size;
                     tray.current_page = 0;
                 }),
@@ -327,20 +295,14 @@ fn build_empty_message() -> ksni::MenuItem<PortSlayerTray> {
 /// # Arguments
 /// * `total` - Total de puertos que coinciden con el filtro
 /// * `filter` - Filtro activo para mostrar en la etiqueta
-fn build_count_header(
-    total: usize,
-    filter: ProtocolFilter,
-) -> ksni::MenuItem<PortSlayerTray> {
+fn build_count_header(total: usize, filter: ProtocolFilter) -> ksni::MenuItem<PortSlayerTray> {
     let filter_label = match filter {
         ProtocolFilter::All => "".to_string(),
         _ => format!(" ({})", filter.label()),
     };
 
     StandardItem {
-        label: format!(
-            "📡 {} puertos encontrados{}",
-            total, filter_label
-        ),
+        label: format!("📡 {} puertos encontrados{}", total, filter_label),
         enabled: false,
         ..Default::default()
     }
@@ -351,9 +313,7 @@ fn build_count_header(
 ///
 /// # Arguments
 /// * `total` - Cantidad de puertos para mostrar en la etiqueta
-fn build_kill_all_item(
-    total: usize,
-) -> ksni::MenuItem<PortSlayerTray> {
+fn build_kill_all_item(total: usize) -> ksni::MenuItem<PortSlayerTray> {
     StandardItem {
         label: format!("⚔️ Cerrar Todos ({} puertos)", total),
         activate: Box::new(|tray: &mut PortSlayerTray| {
@@ -363,9 +323,7 @@ fn build_kill_all_item(
                     log::info!("{} procesos terminados", count);
                 }
                 Err(e) => {
-                    log::error!(
-                        "Error al cerrar puertos: {}", e
-                    );
+                    log::error!("Error al cerrar puertos: {}", e);
                 }
             }
             tray.refresh_ports();
@@ -383,9 +341,7 @@ fn build_kill_all_item(
 ///
 /// # Arguments
 /// * `port_info` - Información del puerto a mostrar
-fn build_port_item(
-    port_info: &port_scanner::PortInfo,
-) -> ksni::MenuItem<PortSlayerTray> {
+fn build_port_item(port_info: &port_scanner::PortInfo) -> ksni::MenuItem<PortSlayerTray> {
     let pid = port_info.pid;
     let port_num = port_info.port;
 
@@ -403,28 +359,16 @@ fn build_port_item(
         enabled: can_kill,
         activate: Box::new(move |tray: &mut PortSlayerTray| {
             if pid == 0 {
-                log::warn!(
-                    "No se puede cerrar puerto {} sin PID",
-                    port_num
-                );
+                log::warn!("No se puede cerrar puerto {} sin PID", port_num);
                 return;
             }
-            log::info!(
-                "Cerrando puerto {} (PID: {})",
-                port_num, pid
-            );
+            log::info!("Cerrando puerto {} (PID: {})", port_num, pid);
             match port_scanner::kill_process(pid) {
                 Ok(()) => {
-                    log::info!(
-                        "Puerto {} cerrado exitosamente",
-                        port_num
-                    );
+                    log::info!("Puerto {} cerrado exitosamente", port_num);
                 }
                 Err(e) => {
-                    log::error!(
-                        "Error cerrando puerto {}: {}",
-                        port_num, e
-                    );
+                    log::error!("Error cerrando puerto {}: {}", port_num, e);
                 }
             }
             tray.refresh_ports();
@@ -459,10 +403,7 @@ fn build_navigation_items(
             activate: Box::new(|tray: &mut PortSlayerTray| {
                 if tray.current_page > 0 {
                     tray.current_page -= 1;
-                    log::debug!(
-                        "Página anterior: {}",
-                        tray.current_page + 1
-                    );
+                    log::debug!("Página anterior: {}", tray.current_page + 1);
                 }
             }),
             ..Default::default()
@@ -473,11 +414,7 @@ fn build_navigation_items(
     // Indicador de página actual (no clickeable)
     items.push(
         StandardItem {
-            label: format!(
-                "📄 Página {}/{}",
-                current_page + 1,
-                total_pages
-            ),
+            label: format!("📄 Página {}/{}", current_page + 1, total_pages),
             enabled: false,
             ..Default::default()
         }
@@ -493,10 +430,7 @@ fn build_navigation_items(
             activate: Box::new(move |tray: &mut PortSlayerTray| {
                 if tray.current_page + 1 < total_pages {
                     tray.current_page += 1;
-                    log::debug!(
-                        "Página siguiente: {}",
-                        tray.current_page + 1
-                    );
+                    log::debug!("Página siguiente: {}", tray.current_page + 1);
                 }
             }),
             ..Default::default()
@@ -545,9 +479,7 @@ pub fn run_tray() {
     // Hilo de actualización automática cada 10 segundos
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(
-                std::time::Duration::from_secs(10),
-            );
+            std::thread::sleep(std::time::Duration::from_secs(10));
 
             // Escanear puertos actualizados
             let new_ports = port_scanner::scan_open_ports();
@@ -566,8 +498,6 @@ pub fn run_tray() {
 
     // Ejecutar el servicio (bloquea el hilo principal)
     if let Err(e) = service.run() {
-        log::error!(
-            "Error ejecutando el servicio de tray: {}", e
-        );
+        log::error!("Error ejecutando el servicio de tray: {}", e);
     }
 }
