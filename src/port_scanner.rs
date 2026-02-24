@@ -924,17 +924,3 @@ mod tests {
         assert_eq!(clean_address("0.0.0.0"), "0.0.0.0");
     }
 }
-#[test]
-fn test_debug_print() {
-    let ports = scan_open_ports();
-    for p in ports {
-        println!("{} {} {}", p.port, p.pid, p.process_name);
-    }
-}
-// Debug hack
-pub fn debug_ports() {
-    let ports = scan_open_ports();
-    for p in ports {
-        log::error!("DEBUG PORT: {} {} {}", p.port, p.pid, p.process_name);
-    }
-}

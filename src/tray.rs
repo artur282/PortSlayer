@@ -43,7 +43,7 @@ impl PortSlayerTray {
     /// Realiza un escaneo completo de puertos (ss + /proc/net)
     /// y configura la vista con filtro "Todos" y paginación de 10.
     pub fn new() -> Self {
-        port_scanner::debug_ports(); let ports = port_scanner::scan_open_ports();
+        let ports = port_scanner::scan_open_ports();
         log::info!("Escaneo inicial: {} puertos detectados", ports.len());
         Self {
             ports: Arc::new(Mutex::new(ports)),
