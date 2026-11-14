@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build release archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libdbus-1-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: portslayer-release
+          cache-on-failure: true
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Package release archive
+        run: |
+          set -eu
+          name="portslayer-${GITHUB_REF_NAME}-x86_64-linux"
+          mkdir -p "dist/${name}/scripts" "dist/${name}/packaging"
+          cp target/release/portslayer "dist/${name}/"
+          cp README.md LICENSE "dist/${name}/"
+          cp scripts/install.sh scripts/uninstall.sh "dist/${name}/scripts/"
+          cp packaging/portslayer.desktop "dist/${name}/packaging/"
+          chmod +x "dist/${name}/portslayer" \
+            "dist/${name}/scripts/install.sh" \
+            "dist/${name}/scripts/uninstall.sh"
+          tar -czf "dist/${name}.tar.gz" -C dist "${name}"
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums
+        run: (cd dist && sha256sum * > SHA256SUMS)
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
