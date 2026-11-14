@@ -695,7 +695,7 @@ pub fn kill_process(pid: u32) -> Result<(), String> {
 }
 
 /// Mata el proceso asociado a un puerto cuando no se conoce el PID, usando `fuser`.
-/// 
+///
 /// Utiliza `pkexec` para solicitar permisos gráficos.
 pub fn kill_port_by_number(port: u16, protocol: &str) -> Result<(), String> {
     log::info!("Intentando cerrar puerto {}/{} vía fuser", port, protocol);
@@ -710,7 +710,10 @@ pub fn kill_port_by_number(port: u16, protocol: &str) -> Result<(), String> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&elevated.stderr);
-        Err(format!("No se pudo cerrar el puerto {}/{}: {}", port, protocol, stderr))
+        Err(format!(
+            "No se pudo cerrar el puerto {}/{}: {}",
+            port, protocol, stderr
+        ))
     }
 }
 
