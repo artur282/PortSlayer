@@ -11,7 +11,7 @@ categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 # System tray para Linux (StatusNotifierItem / AppIndicator)
-ksni = "0.2"
+ksni = "0.3"
 
 # Logging estructurado
 log = "0.4"
