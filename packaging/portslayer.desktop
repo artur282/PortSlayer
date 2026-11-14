@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PortSlayer
+GenericName=Port Monitor
+Comment=View and close open ports from the system tray
+Exec=portslayer
+Icon=network-server
+Terminal=false
+Categories=System;
+Keywords=ports;network;tray;process;
+StartupNotify=false
+StartupWMClass=portslayer

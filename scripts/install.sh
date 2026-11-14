@@ -1,146 +1,203 @@
-#!/bin/bash
-# =====================================================
-# PortSlayer ⚔️ - Script de Instalación
-# =====================================================
-# Compila, instala y configura el autostart de PortSlayer
-# Compatible con: ZorinOS, Ubuntu, Linux Mint, Fedora, Arch
-# =====================================================
+#!/usr/bin/env bash
+# Instalador user-local de PortSlayer.
+# No usa sudo salvo que se pida --enable-ss-sudo o al desinstalar un archivo
+# de sudoers creado por una version anterior.
 
-set -e
+set -euo pipefail
 
-# Colores para la salida
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # Sin color
-
-# Rutas de instalación
-INSTALL_DIR="/usr/local/bin"
-AUTOSTART_DIR="$HOME/.config/autostart"
-DESKTOP_FILE="portslayer.desktop"
+APP_NAME="PortSlayer"
 BINARY_NAME="portslayer"
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PREFIX="${PREFIX:-$HOME/.local}"
+BINDIR="$PREFIX/bin"
+APPDIR="$PREFIX/share/applications"
+DESKTOP_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+DESKTOP_NAME="portslayer.desktop"
+SUDOERS_FILE="/etc/sudoers.d/portslayer"
 
-echo -e "${CYAN}"
-echo "  ⚔️  PortSlayer - Instalador"
-echo "  ================================"
-echo -e "${NC}"
+usage() {
+    cat <<EOF
+Instala $APP_NAME en un prefijo de usuario.
 
-# ─── Cargar entorno de rustup si existe ─────────────────
-# Esto garantiza que usamos la versión de Rust instalada via rustup
-# y no la versión del sistema (que puede ser antigua y tener limitaciones)
+Uso: scripts/install.sh [--build|--no-build] [--uninstall] [--enable-ss-sudo]
+
+Opciones:
+  --build             Compila el binario release antes de instalar
+  --no-build          Falla si el binario no existe en vez de compilar
+  --uninstall         Elimina los archivos instalados
+  --enable-ss-sudo    Permite ejecutar 'sudo -n ss' sin contrasena para ver
+                      los PIDs de todos los procesos. Es opcional y requiere
+                      sudo.
+  -h, --help          Muestra esta ayuda
+
+Entorno:
+  PREFIX              Prefijo de instalacion (default: $HOME/.local)
+EOF
+}
+
+refresh_caches() {
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$APPDIR" >/dev/null 2>&1 || true
+    fi
+}
+
+check_build_dependencies() {
+    if ! command -v pkg-config >/dev/null 2>&1 ||
+       ! pkg-config --exists dbus-1 2>/dev/null; then
+        echo "error: falta libdbus-1-dev (pkg-config no encuentra dbus-1)." >&2
+        echo "Instalala con uno de estos comandos:" >&2
+        echo "  Debian/Ubuntu: sudo apt install -y libdbus-1-dev pkg-config" >&2
+        echo "  Fedora:        sudo dnf install -y dbus-devel pkg-config" >&2
+        echo "  Arch:          sudo pacman -S --noconfirm dbus pkg-config" >&2
+        exit 1
+    fi
+}
+
+BUILD_MODE="auto"
+UNINSTALL=0
+ENABLE_SS_SUDO=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --build) BUILD_MODE="always" ;;
+        --no-build) BUILD_MODE="never" ;;
+        --uninstall) UNINSTALL=1 ;;
+        --enable-ss-sudo) ENABLE_SS_SUDO=1 ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "error: opcion desconocida: $arg" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ "$UNINSTALL" -eq 1 ]; then
+    if pgrep -x "$BINARY_NAME" >/dev/null 2>&1; then
+        pkill -x "$BINARY_NAME" || true
+    fi
+    rm -f \
+        "$BINDIR/$BINARY_NAME" \
+        "$APPDIR/$DESKTOP_NAME" \
+        "$DESKTOP_DIR/$DESKTOP_NAME"
+    if [ -f "$SUDOERS_FILE" ]; then
+        echo "Eliminando $SUDOERS_FILE (requiere sudo)..."
+        sudo rm -f "$SUDOERS_FILE"
+    fi
+    refresh_caches
+    echo "PortSlayer fue eliminado de $PREFIX."
+    exit 0
+fi
+
 if [ -f "$HOME/.cargo/env" ]; then
     # shellcheck source=/dev/null
     source "$HOME/.cargo/env"
 fi
 
-# ─── Verificar dependencias ────────────────────────────
-echo -e "${BLUE}[1/5]${NC} Verificando dependencias..."
+case "$BUILD_MODE" in
+    always)
+        check_build_dependencies
+        (cd "$ROOT" && cargo build --release --locked)
+        ;;
+    auto)
+        if [ ! -x "$ROOT/target/release/$BINARY_NAME" ] &&
+           [ ! -x "$ROOT/$BINARY_NAME" ]; then
+            check_build_dependencies
+            (cd "$ROOT" && cargo build --release --locked)
+        fi
+        ;;
+    never)
+        ;;
+esac
 
-# Determinar qué cargo usar: rustup tiene prioridad sobre el del sistema
-# El cargo del sistema puede no soportar el formato del Cargo.lock
-CARGO_BIN="cargo"
-if command -v "$HOME/.cargo/bin/cargo" &> /dev/null; then
-    CARGO_BIN="$HOME/.cargo/bin/cargo"
-    echo -e "  → Usando cargo de rustup: $($CARGO_BIN --version)"
-elif command -v cargo &> /dev/null; then
-    echo -e "  → Usando cargo del sistema: $(cargo --version)"
+if [ -x "$ROOT/target/release/$BINARY_NAME" ]; then
+    BINARY="$ROOT/target/release/$BINARY_NAME"
+elif [ -x "$ROOT/$BINARY_NAME" ]; then
+    BINARY="$ROOT/$BINARY_NAME"
 else
-    # Instalar Rust/Cargo vía rustup si no hay ninguno disponible
-    echo -e "${YELLOW}⚠ Cargo no encontrado. Instalando Rust vía rustup...${NC}"
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
-    CARGO_BIN="$HOME/.cargo/bin/cargo"
-fi
-
-# Verificar dependencia del sistema: libdbus (requerida por ksni)
-if ! pkg-config --exists dbus-1 2>/dev/null; then
-    echo -e "${YELLOW}⚠ libdbus-1-dev no encontrada. Instalando...${NC}"
-    if command -v apt &> /dev/null; then
-        sudo apt install -y libdbus-1-dev pkg-config
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install -y dbus-devel pkg-config
-    elif command -v pacman &> /dev/null; then
-        sudo pacman -S --noconfirm dbus pkg-config
-    fi
-fi
-
-echo -e "${GREEN}✓ Dependencias verificadas${NC}"
-
-# ─── Regenerar Cargo.lock si es incompatible ───────────
-# El Cargo.lock versión 4 requiere cargo >= 1.78.
-# Si el sistema tiene una versión anterior se elimina para regenerarlo.
-if [ -f "Cargo.lock" ]; then
-    LOCK_VERSION=$(grep "^version" Cargo.lock | head -1 | awk '{print $3}')
-    CARGO_MINOR=$("$CARGO_BIN" --version | grep -oP '\d+\.\d+' | head -1 | cut -d. -f2)
-    if [ -n "$LOCK_VERSION" ] && [ "$LOCK_VERSION" -ge 4 ] && [ "$CARGO_MINOR" -lt 78 ]; then
-        echo -e "${YELLOW}→ Cargo.lock v${LOCK_VERSION} incompatible con cargo $(${CARGO_BIN} --version | awk '{print $2}'). Regenerando...${NC}"
-        rm -f Cargo.lock
-    fi
-fi
-
-# ─── Compilar en modo release ──────────────────────────
-echo -e "${BLUE}[2/5]${NC} Compilando PortSlayer (modo release)..."
-"$CARGO_BIN" build --release
-
-if [ ! -f "target/release/$BINARY_NAME" ]; then
-    echo -e "${RED}✗ Error: No se encontró el binario compilado${NC}"
+    echo "error: no se encontro el binario release." >&2
+    echo "Compilalo con: cargo build --release --locked" >&2
     exit 1
 fi
 
-echo -e "${GREEN}✓ Compilación exitosa${NC}"
+DESKTOP_SOURCE="$ROOT/packaging/$DESKTOP_NAME"
+if [ ! -f "$DESKTOP_SOURCE" ]; then
+    echo "error: falta $DESKTOP_SOURCE" >&2
+    exit 1
+fi
 
-# ─── Instalar binario ─────────────────────────────────
-echo -e "${BLUE}[3/5]${NC} Instalando binario en $INSTALL_DIR..."
-sudo cp "target/release/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
-sudo chmod +x "$INSTALL_DIR/$BINARY_NAME"
+EXEC_PATH="$BINDIR/$BINARY_NAME"
+case "$EXEC_PATH" in
+    *[[:space:]]*)
+        echo "error: PREFIX no puede contener espacios." >&2
+        exit 1
+        ;;
+esac
 
-echo -e "${GREEN}✓ Binario instalado${NC}"
+mkdir -p "$BINDIR" "$APPDIR" "$DESKTOP_DIR"
 
-# ─── Configurar autostart ─────────────────────────────
-echo -e "${BLUE}[4/5]${NC} Configurando inicio automático..."
-mkdir -p "$AUTOSTART_DIR"
+install -m755 "$BINARY" "$BINDIR/$BINARY_NAME"
 
-cat > "$AUTOSTART_DIR/$DESKTOP_FILE" << EOF
+TMP_DESKTOP=$(mktemp)
+trap 'rm -f "$TMP_DESKTOP"' EXIT
+EXEC_LINE="Exec=$EXEC_PATH" awk '
+    /^Exec=/ { print ENVIRON["EXEC_LINE"]; next }
+    { print }
+' "$DESKTOP_SOURCE" > "$TMP_DESKTOP"
+install -m644 "$TMP_DESKTOP" "$APPDIR/$DESKTOP_NAME"
+rm -f "$TMP_DESKTOP"
+trap - EXIT
+
+cat > "$DESKTOP_DIR/$DESKTOP_NAME" <<EOF
 [Desktop Entry]
 Type=Application
 Name=PortSlayer
 Comment=Monitor and kill open ports from system tray
-Exec=$INSTALL_DIR/$BINARY_NAME
+Exec=$EXEC_PATH
 Icon=network-server
 Terminal=false
-Categories=System;Network;Monitor;
+Categories=System;
 StartupNotify=false
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=5
 EOF
 
-echo -e "${GREEN}✓ Autostart configurado${NC}"
-
-# ─── Configurar sudoers (opcional) ─────────────────────
-echo -e "${BLUE}[5/5]${NC} Configurando permisos..."
-
-# Permitir ejecutar ss sin contraseña para ver todos los puertos
-SUDOERS_FILE="/etc/sudoers.d/portslayer"
-if [ ! -f "$SUDOERS_FILE" ]; then
-    echo -e "${YELLOW}→ Configurando acceso a ss sin contraseña...${NC}"
-    echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/ss" | sudo tee "$SUDOERS_FILE" > /dev/null
-    sudo chmod 440 "$SUDOERS_FILE"
-    echo -e "${GREEN}✓ Permisos configurados${NC}"
-else
-    echo -e "${GREEN}✓ Permisos ya configurados${NC}"
+if [ "$ENABLE_SS_SUDO" -eq 1 ]; then
+    echo "Configurando sudo -n para /usr/sbin/ss (requiere sudo)..."
+    SUDOERS_TMP=$(mktemp)
+    trap 'rm -f "$SUDOERS_TMP"' EXIT
+    printf '%s ALL=(ALL) NOPASSWD: /usr/sbin/ss\n' "${USER:-$(id -un)}" \
+        > "$SUDOERS_TMP"
+    if command -v visudo >/dev/null 2>&1; then
+        visudo -cf "$SUDOERS_TMP" >/dev/null
+    fi
+    sudo install -m440 "$SUDOERS_TMP" "$SUDOERS_FILE"
+    rm -f "$SUDOERS_TMP"
+    trap - EXIT
 fi
 
-# ─── Resumen ──────────────────────────────────────────
-echo ""
-echo -e "${CYAN}  ⚔️  PortSlayer instalado exitosamente!${NC}"
-echo -e "  ${GREEN}────────────────────────────────────${NC}"
-echo -e "  📍 Binario:   $INSTALL_DIR/$BINARY_NAME"
-echo -e "  🔄 Autostart: $AUTOSTART_DIR/$DESKTOP_FILE"
-echo -e ""
-echo -e "  ${YELLOW}Para iniciar ahora:${NC}"
-echo -e "    portslayer &"
-echo -e ""
-echo -e "  ${YELLOW}La app se iniciará automáticamente con el sistema.${NC}"
-echo ""
+refresh_caches
+
+echo "PortSlayer instalado:"
+echo "  binario:  $BINDIR/$BINARY_NAME"
+echo "  desktop:  $APPDIR/$DESKTOP_NAME"
+echo "  autostart: $DESKTOP_DIR/$DESKTOP_NAME"
+if [ "$ENABLE_SS_SUDO" -eq 1 ]; then
+    echo "  sudoers:  $SUDOERS_FILE"
+fi
+echo
+
+case ":$PATH:" in
+    *":$BINDIR:"*)
+        echo "Ejecuta: $BINARY_NAME &"
+        ;;
+    *)
+        echo "nota: $BINDIR no esta en tu PATH."
+        echo "Agregalo con:"
+        echo "  export PATH=\"$BINDIR:\$PATH\""
+        echo "Luego ejecuta: $BINARY_NAME &"
+        ;;
+esac

@@ -88,10 +88,33 @@ Y luego tienes que abrir la terminal, buscar el PID, ejecutar `kill`... **demasi
 git clone https://github.com/artur282/PortSlayer.git
 cd PortSlayer
 
-# Instalar (compila, instala y configura autostart)
+# Instalar (compila, instala en ~/.local y configura autostart)
 chmod +x scripts/install.sh
 ./scripts/install.sh
 ```
+
+El instalador es user-local y **no usa `sudo`** para instalar el binario. Deja:
+
+- `~/.local/bin/portslayer`
+- `~/.local/share/applications/portslayer.desktop`
+- `~/.config/autostart/portslayer.desktop`
+
+Podés elegir otro prefijo y omitir la compilación si el binario ya existe:
+
+```bash
+PREFIX="$HOME/.local" ./scripts/install.sh
+./scripts/install.sh --no-build
+```
+
+Para ver los PIDs de todos los procesos, el instalador puede crear una regla
+opcional de `sudoers` que permite `sudo -n ss`. Es opt-in y requiere `sudo`:
+
+```bash
+./scripts/install.sh --enable-ss-sudo
+```
+
+Sin esa regla, PortSlayer usa `ss` sin privilegios y `pkexec` para cerrar
+procesos que no te pertenecen.
 
 ### Compilar manualmente
 
@@ -102,7 +125,7 @@ sudo dnf install -y dbus-devel pkg-config       # Fedora
 sudo pacman -S dbus pkg-config                  # Arch
 
 # Compilar
-cargo build --release
+cargo build --release --locked
 
 # El binario está en target/release/portslayer
 ./target/release/portslayer &
@@ -114,6 +137,9 @@ cargo build --release
 chmod +x scripts/uninstall.sh
 ./scripts/uninstall.sh
 ```
+
+También podés usar `./scripts/install.sh --uninstall`. El desinstalador elimina
+el binario, el desktop entry, el autostart y la regla de `sudoers` si existe.
 
 ---
 
